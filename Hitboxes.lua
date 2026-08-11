@@ -1,126 +1,78 @@
---[[
-made by gabe-makes-scripts on github
-check out my youtube: https://www.youtube.com/@Ragadevelops
+local module = {}
 
-how to use: video coming soon!!
-
-]]
-
---Varibles
-local HitboxHandler = {}
-
-local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
-local RunService = game:GetService("RunService")
+local debug = true
+local update_time = .15
 
-local CharacterHandler = require(game.ReplicatedStorage.Modules.CharacterHandler)
-local AudioHandler = require(game.ReplicatedStorage.Modules.AudioHandler)
-local VFXHandler = require(game.ReplicatedStorage.Modules.VfxHandler)
-local StateHandler = require(game.ReplicatedStorage.Modules.StateHandler) --get this from other project on github in order for this to work
+local function createhitbox(Data: Data)
+	
+	if not Data.CFrame and not Data.Parent then return warn("not valid cframe") end	
+	
+	local size = Data.Size or Vector3.new(5, 5, 5)
+	local cframe 
+	
+	if Data.Parent then
+		cframe = Data.Parent.PrimaryPart.CFrame or Data.Parent.CFrame
+	else
+		cframe = Data.CFrame
+	end
 
-
---Logic
-function HitboxHandler.Projectile(startPos: Vector3, endPos: Vector3, damage: number, stunTime: number, timeLasting: number, part: Part)
-	part.Position = startPos
-
-	local TweenInfoProjectile = TweenInfo.new(timeLasting, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
-	local projectileTween = TweenService:Create(part, TweenInfoProjectile, {Position = endPos})
-
-	projectileTween:Play()
-	HitboxHandler.HitDetection(part, timeLasting, damage, stunTime, 5)
-
-	Debris:AddItem(part, timeLasting)
-end
-
-function HitboxHandler.HitDetection(part: Part, timeLasted: number, damage: number, stunTime: number, hitDelay: number)
-	local hitList = {}
-
-	local heartbeat: RBXScriptConnection
-	heartbeat = RunService.Heartbeat:Connect(function()
-		local results = workspace:GetPartsInPart(part)
-		for _, result in ipairs(results) do
-			local character = result.Parent
-			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			if not humanoid or hitList[character] then continue end
-
-			hitList[character] = true
-
-			if StateHandler.ReturnState(character, "Stunned") == true then
-				continue
-			end
-
-			StateHandler.SetState(character, "Stunned")
-			humanoid:TakeDamage(damage)
-
-			task.delay(hitDelay or stunTime, function()
-				hitList[character] = nil
-			end)
-
-			task.delay(stunTime, function()
-				StateHandler.SetState(character, "Stunned")
-			end)
-		end
-	end)
-
-	task.delay(timeLasted, function()
-		heartbeat:Disconnect()
-	end)
-end
-
-function HitboxHandler.Grab(part: Part, attacker: Model, timeLasting: number)
-	local results = workspace:GetPartsInPart(part)
-	for _, result in ipairs(results) do
-		local character = result.Parent
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if not humanoid then continue end
-		if humanoid == attacker:FindFirstChildOfClass("Humanoid") then continue end
-
-		if StateHandler.ReturnState(character, "Stunned") == true then return end
-
-		StateHandler.SetState(character, "Stunned")
-		humanoid.WalkSpeed = 0
-		humanoid.PlatformStand = true
-
-		character:PivotTo(attacker.PrimaryPart.CFrame * CFrame.new(0, 0, -3)) --tp victim infront of attacker
-
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = attacker:FindFirstChild("HumanoidRootPart")
-		weld.Part1 = character:FindFirstChild("HumanoidRootPart")
-		weld.Parent = attacker.HumanoidRootPart
-
-		task.delay(timeLasting, function()
-			StateHandler.SetState(character, "Stunned")
-			humanoid.WalkSpeed = 16
-			humanoid.PlatformStand = false
-			weld:Destroy()
+	
+	local results = workspace:GetPartBoundsInBox(cframe, size)
+	
+	if debug == true then
+		task.spawn(function()
+			local part = Instance.new("Part")
+			part.Transparency = .9
+			part.BrickColor = BrickColor.Red()
+			part.Anchored = true
+			part.CanCollide = false
+			part.CFrame = cframe 
+			part.Size = size
+			part.CanQuery = false
+			part.Parent = workspace.Hitboxes
+			Debris:AddItem(part, .5)
 		end)
-
-		return character
 	end
-	return nil
+	
+	return results
 end
 
-function HitboxHandler.DetectOnce(part: Part, attacker: Model, multHit: boolean)
-	local results = workspace:GetPartsInPart(part)
-	local hitTable = {}
+function module.Once(Data: Data)
+	return createhitbox(Data)
+end
 
-	for _, result in ipairs(results) do
-		local character = result.Parent
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if not humanoid then continue end
-		if humanoid == attacker:FindFirstChildOfClass("Humanoid") then continue end -- skips over attacker
+function module.Start(Data: Data)
+	local time = Data.Time or 3
 
-		if multHit then
-			table.insert(hitTable, character)
-		else
-			return character 
+	local hitbox = {}
+	hitbox.Event = Instance.new("BindableEvent")
+
+	local running = true
+
+	task.delay(time, function()
+		running = false
+	end)
+
+	task.spawn(function()
+		while running do
+			local results = createhitbox(Data)
+			hitbox.Event:Fire(results)
+			task.wait(Data.UpdateTime or update_time)
 		end
-	end
 
-	if multHit then
-		return hitTable
-	end
-	return nil
+		hitbox.Event:Destroy()
+	end)
+
+	return hitbox.Event
 end
 
-return HitboxHandler
+export type Data = {
+	Size: Vector3,
+	Time: number,
+	Parent: Model,
+	CFrame: CFrame?,
+	UpdateTime: number,
+}
+
+return module
